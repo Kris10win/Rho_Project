@@ -7,8 +7,8 @@ from BCBio import GFF
 # --------------------------------------------------------------------------------
 # File paths
 # --------------------------------------------------------------------------------
-forward_file = '1325_WT_199_200_201_vs_243_235_236_1325_BCM_m14_M30_forward_strand_differential_table.txt'
-reverse_file = '1325_WT_199_200_201_vs_243_235_236_1325_BCM_m14_M30_reverse_strand_differential_table.txt'
+forward_file = '211_212_213_1328_40_R1_M14_M30_vs_234_235_236_1325_BCM_m14_M30_forward_strand_differential_table_window.txt'
+reverse_file = '211_212_213_1328_40_R1_M14_M30_vs_234_235_236_1325_BCM_m14_M30_reverse_strand_differential_table_window.txt'
 gff_file = 'NC_000913.2.gff3'
 db_file = 'NC_000913.2.db'
 tss_file_path = 'TSS.csv'
@@ -33,7 +33,7 @@ except ValueError:
 # --------------------------------------------------------------------------------
 # Load and filter data
 # --------------------------------------------------------------------------------
-def load_and_filter_data(file_path, strand, window_size):
+def load_and_filter_data(file_path, strand):
     df = pd.read_csv(file_path, sep='\t')
     
     if strand == 'forward':
@@ -147,7 +147,7 @@ def calculate_cluster_statistics(df_clusters, df, chrom):
         # Coordinates for Max_WT_Ratio
         max_wt_ratio_coords = cluster_data[cluster_data['WT_Ratio'] == max_toxic_ratio]['Coord'].values
         if len(max_wt_ratio_coords) > 1:
-            # Check if the max WT ratio spans a contiguous region
+           
             if max_wt_ratio_coords[-1] - max_wt_ratio_coords[0] == len(max_wt_ratio_coords) - 1:
                 max_wt_ratio_coord = int((max_wt_ratio_coords[0] + max_wt_ratio_coords[-1]) / 2)
             else:
@@ -158,7 +158,7 @@ def calculate_cluster_statistics(df_clusters, df, chrom):
         # Coordinates for Max_log2_FC
         max_log2fc_coords = cluster_data[cluster_data['Log2_FC'] == max_log2fc]['Coord'].values
         if len(max_log2fc_coords) > 1:
-            # Check if the max log2 FC spans a contiguous region
+          
             if max_log2fc_coords[-1] - max_log2fc_coords[0] == len(max_log2fc_coords) - 1:
                 max_log2fc_coord = int((max_log2fc_coords[0] + max_log2fc_coords[-1]) / 2)
             else:
@@ -233,7 +233,7 @@ def get_gene_info(db, clusters, tss_df, strand):
                 clusters.at[index, 'Sense_or_Anti'] = ''
                 clusters.at[index, 'Intergenic_or_AKA_Code'] = 'Intergenic'
             else:
-                # Truly intergenic: find upstream & downstream genes
+               
                 upstream_genes = [
                     g for g in non_pseudogenes
                     if g.seqid == chrom and g.end < start
@@ -273,7 +273,6 @@ def get_gene_info(db, clusters, tss_df, strand):
             raise ValueError("Strand must be 'forward' or 'reverse'")
 
         if not relevant_tss.empty:
-            # pick TSS whose site is closest to start
             closest_tss_idx = (relevant_tss['TSS_site'] - start).abs().idxmin()
             clusters.at[index, 'Closest_TSS'] = relevant_tss.loc[closest_tss_idx, 'TSS_site']
 
@@ -290,48 +289,49 @@ def get_gene_info(db, clusters, tss_df, strand):
     return clusters
 
 # --------------------------------------------------------------------------------
-# Basic CT and G content calculations
+# CT and G content calculations
 # --------------------------------------------------------------------------------
 def calculate_ct_content(sequence):
-    """Fraction of C or T in the entire sequence."""
     if len(sequence) == 0:
         return 0
     ct_count = sequence.count('C') + sequence.count('T')
     return ct_count / len(sequence)
 
-def sliding_window_ct_content(sequence, window_size=30):
-    """List of CT content in each window of length `window_size` along `sequence`."""
+def sliding_window_ct_content(sequence, base_window_size=30):
     results = []
-    for i in range(len(sequence) - window_size + 1):
-        window = sequence[i:i + window_size]
+    for i in range(len(sequence) - base_window_size + 1):
+        window = sequence[i:i + base_window_size]
         ct_content = (window.count('C') + window.count('T')) / len(window)
         results.append(ct_content)
     return results
 
-def sliding_window_g_content(sequence, window_size=30):
-    """List of G content in each window of length `window_size` along `sequence`."""
+def sliding_window_g_content(sequence, base_window_size=30):
     results = []
-    for i in range(len(sequence) - window_size + 1):
-        window = sequence[i:i + window_size]
+    for i in range(len(sequence) - base_window_size + 1):
+        window = sequence[i:i + base_window_size]
         g_content = window.count('G') / len(window)
         results.append(g_content)
     return results
 
 # --------------------------------------------------------------------------------
-# Find highest CT or lowest G region in Upstream / Downstream (existing code)
+# Find highest CT or lowest G region in Upstream / Downstream
 # --------------------------------------------------------------------------------
 def find_highest_ct_content_region(upstream_seq, downstream_seq, start_coord):
-    upstream_ct_windows = sliding_window_ct_content(upstream_seq, window_size=30)
-    downstream_ct_windows = sliding_window_ct_content(downstream_seq, window_size=30)
+    """
+    Use sliding windows of length base_window_size=30 to find the coordinate
+    where CT content is highest in upstream and downstream sequences.
+    """
+    upstream_ct_windows = sliding_window_ct_content(upstream_seq, base_window_size=30)
+    downstream_ct_windows = sliding_window_ct_content(downstream_seq, base_window_size=30)
     
-    # highest in upstream
+    # upstream
     if upstream_ct_windows:
         max_up_idx = upstream_ct_windows.index(max(upstream_ct_windows))
         upstream_center = start_coord - len(upstream_seq) + max_up_idx + 15
     else:
         upstream_center = None
     
-    # highest in downstream
+    # downstream
     if downstream_ct_windows:
         max_down_idx = downstream_ct_windows.index(max(downstream_ct_windows))
         downstream_center = start_coord + max_down_idx + 15
@@ -341,17 +341,21 @@ def find_highest_ct_content_region(upstream_seq, downstream_seq, start_coord):
     return upstream_center, downstream_center
 
 def find_lowest_g_content_region(upstream_seq, downstream_seq, start_coord):
-    upstream_g_windows   = sliding_window_g_content(upstream_seq, window_size=30)
-    downstream_g_windows = sliding_window_g_content(downstream_seq, window_size=30)
+    """
+    Use sliding windows of length base_window_size=30 to find the coordinate
+    where G content is lowest in upstream and downstream sequences.
+    """
+    upstream_g_windows   = sliding_window_g_content(upstream_seq, base_window_size=30)
+    downstream_g_windows = sliding_window_g_content(downstream_seq, base_window_size=30)
     
-    # lowest in upstream
+    # upstream
     if upstream_g_windows:
         min_up_idx = upstream_g_windows.index(min(upstream_g_windows))
         upstream_center = start_coord - len(upstream_seq) + min_up_idx + 15
     else:
         upstream_center = None
     
-    # lowest in downstream
+    # downstream
     if downstream_g_windows:
         min_down_idx = downstream_g_windows.index(min(downstream_g_windows))
         downstream_center = start_coord + min_down_idx + 15
@@ -363,25 +367,17 @@ def find_lowest_g_content_region(upstream_seq, downstream_seq, start_coord):
 # --------------------------------------------------------------------------------
 # 1) Combine Upstream + Downstream for a Single 200-nt Sequence
 # --------------------------------------------------------------------------------
-def calculate_combined_windows(upstream_seq, downstream_seq, window_size=30):
-    """
-    Concatenate upstream_seq + downstream_seq into a single ~200-nt string,
-    then compute sliding-window CT and G content for that entire region.
-    Returns two lists: ( [CT_contents], [G_contents] ).
-    """
-    combined_seq = upstream_seq + downstream_seq  # ~200 nt total
-    ct_values = sliding_window_ct_content(combined_seq, window_size=window_size)
-    g_values  = sliding_window_g_content(combined_seq, window_size=window_size)
+def calculate_combined_windows(upstream_seq, downstream_seq, base_window_size=30):
+
+    combined_seq = upstream_seq + downstream_seq  
+    ct_values = sliding_window_ct_content(combined_seq, base_window_size=base_window_size)
+    g_values  = sliding_window_g_content(combined_seq, base_window_size=base_window_size)
     return ct_values, g_values
 
 # --------------------------------------------------------------------------------
 # 2) Expand a list-type column into multiple columns (1..171, etc.)
 # --------------------------------------------------------------------------------
 def expand_window_columns(df, window_column, prefix):
-    """
-    Takes a column (each row is a list of floats) and expands into multiple columns.
-    E.g., if we have 171 window values, we get columns prefix1..prefix171.
-    """
     expanded_cols = pd.DataFrame(df[window_column].tolist(), index=df.index)
     expanded_cols.columns = [f'{prefix}{i+1}' for i in range(expanded_cols.shape[1])]
     return expanded_cols
@@ -390,15 +386,7 @@ def expand_window_columns(df, window_column, prefix):
 # 3) Main function to calculate additional features for each cluster
 # --------------------------------------------------------------------------------
 def calculate_additional_features(df):
-    """
-    This is where we calculate:
-      - overall cluster length
-      - CT content in the upstream/downstream sequences
-      - highest CT / lowest G coordinates
-      - (MOST IMPORTANT) a single combined ~200-nt region from -100 to +100 
-        for sliding-window CT and G content, expanded into columns.
-    """
-
+   
     # Basic stats
     df['Cluster_Length'] = df['End'] - df['Start']
     df['CT_Upstream_Content']   = df['Upstream_From_Start_Seq'].apply(calculate_ct_content)
@@ -422,27 +410,23 @@ def calculate_additional_features(df):
         axis=1, result_type="expand"
     )
     
-    # Now the key part: a SINGLE combined window from -100..+100
     combined_results = df.apply(
         lambda row: calculate_combined_windows(
             row['Upstream_Seq'], 
             row['Downstream_Seq'], 
-            window_size=30
+            base_window_size=30
         ),
         axis=1
     )
-    # Each entry in `combined_results` is a tuple: (ct_list, g_list)
     df['CT_Combined_Window'] = combined_results.apply(lambda x: x[0])
     df['G_Combined_Window']  = combined_results.apply(lambda x: x[1])
     
-    # Expand them into separate columns for each position (1..171 for a 30-nt window over 200 nt)
+    # Expand into contented windows
     df_ct_expanded = expand_window_columns(df, 'CT_Combined_Window', 'CT_Combined_Window')
     df_g_expanded  = expand_window_columns(df, 'G_Combined_Window',  'G_Combined_Window')
     
-    # Concatenate back
     df = pd.concat([df, df_ct_expanded, df_g_expanded], axis=1)
     
-    # (Optional) drop the list columns if you only want the expanded columns
     df.drop(columns=['CT_Combined_Window','G_Combined_Window'], inplace=True)
 
     return df
@@ -450,9 +434,10 @@ def calculate_additional_features(df):
 # --------------------------------------------------------------------------------
 # 4) Process Each Strand
 # --------------------------------------------------------------------------------
-def process_strand(file_path, strand, window_size, db, tss_df):
-    df_filtered = load_and_filter_data(file_path, strand, window_size)
+def process_strand(file_path, strand, db, tss_df):
+    df_filtered = load_and_filter_data(file_path, strand)
     
+    # Identify overlaps, cluster, stats
     df_overlaps = identify_overlaps(df_filtered, min_distance=20)
     df_clusters = merge_pseudo_clusters(df_overlaps)
     print(f"Initial number of clusters ({strand}):", len(df_clusters))
@@ -461,15 +446,13 @@ def process_strand(file_path, strand, window_size, db, tss_df):
     df_final = calculate_cluster_statistics(df_clusters, df_filtered, chrom='NC_000913.2')
     print(df_final.head())
     
-    # Assign chromosome identifier
     df_final['chrom'] = 'NC_000913.2'
     
     # Load reference genome
     reference_genome = SeqIO.read("NC_000913.2.fasta", "fasta").seq
     
-    # Create columns for sequences around the cluster center (and from cluster start)
-    # Upstream_Seq, Downstream_Seq = ±100 from 'Center'
-    # Upstream_From_Start_Seq, Downstream_From_Start_Seq = ±100 from 'Start'
+    # Create columns for sequences around the cluster center (±100 nt),
+    # and from cluster start (±100 nt).
     if strand == 'forward':
         df_final['Upstream_Seq'] = df_final['Center'].apply(lambda x: str(reference_genome[x-100:x]))
         df_final['Downstream_Seq'] = df_final['Center'].apply(lambda x: str(reference_genome[x:x+100]))
@@ -477,7 +460,6 @@ def process_strand(file_path, strand, window_size, db, tss_df):
         df_final['Downstream_From_Start_Seq'] = df_final['Start'].apply(lambda x: str(reference_genome[x:x+100]))
         df_final['Strand'] = '+'
     else:  # strand == 'reverse'
-        # For reverse, we want reverse-complements
         df_final['Upstream_Seq'] = df_final['Center'].apply(
             lambda x: str(reference_genome[x:x+100].reverse_complement())
         )
@@ -492,10 +474,8 @@ def process_strand(file_path, strand, window_size, db, tss_df):
         )
         df_final['Strand'] = '-'
     
-    # Annotate with gene info, TSS, etc.
     df_final = get_gene_info(db, df_final, tss_df, strand)
     
-    # Calculate additional features (including the new combined windows)
     df_final = calculate_additional_features(df_final)
 
     return df_final
@@ -503,18 +483,15 @@ def process_strand(file_path, strand, window_size, db, tss_df):
 # --------------------------------------------------------------------------------
 # Main Execution
 # --------------------------------------------------------------------------------
-window_size = 100
 
 # Process forward and reverse
-forward_df = process_strand(forward_file, 'forward', window_size, db, tss_df)
-reverse_df = process_strand(reverse_file, 'reverse', window_size, db, tss_df)
+forward_df = process_strand(forward_file, 'forward', db, tss_df)
+reverse_df = process_strand(reverse_file, 'reverse', db, tss_df)
 
 # Combine results
 combined_df = pd.concat([forward_df, reverse_df], ignore_index=True)
 combined_df = combined_df.sort_values(by='Start').reset_index(drop=True)
 
-# Choose the output columns
-# (Add any new columns as needed; here we also include the expanded window columns.)
 output_columns = [
     'Start', 'Center', 'End', 'Strand', 'Split/Merged',
     'Max_WT_Ratio', 'Max_WT_Ratio_Coord', 'Average_WT_Ratio',
@@ -528,16 +505,14 @@ output_columns = [
     'Lowest_G_Content_Upstream_Coord','Lowest_G_Content_Downstream_Coord'
 ]
 
-# Also include the expanded columns for CT and G combined windows
-combined_window_cols = [col for col in combined_df.columns
-                        if col.startswith('CT_Combined_Window') 
-                        or col.startswith('G_Combined_Window')]
-
+# expanded columns for the CT/G combined windows
+combined_window_cols = [
+    col for col in combined_df.columns
+    if col.startswith('CT_Combined_Window') or col.startswith('G_Combined_Window')
+]
 final_columns = output_columns + combined_window_cols
 
 # Save to CSV
-output_file = (
-    f'combined_strands_1325_WT_199_200_201_vs_243_235_236_1325_BCM_m14_M30_clusters_identified_{window_size}.csv'
-)
+output_file = 'combined_strands_211_212_213_TOX1328_vs_234_235_236_1325_BCM_m14_M30_clusters_identified.csv'
 combined_df.to_csv(output_file, columns=final_columns, index=False)
 print(f"Combined results saved to {output_file}")
